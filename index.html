@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anh Yeu Ha Vy</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const BASE_W = 900;
+const BASE_H = 700;
+
+const COLORS = [
+    'rgb(245, 150, 195)', 'rgb(240, 130, 180)', 'rgb(215, 150, 240)',
+    'rgb(190, 160, 240)', 'rgb(245, 190, 210)', 'rgb(235, 215, 225)', 'rgb(245, 175, 145)'
+];
+
+const TEXT_STR = "Anh Yeu Ha Vy";
+const TEXT_V2 = "Ha Vy Cte";
+
+const IMAGE_URLS = [
+    "https://cdn.phototourl.com/member/2026-10-07-324ab3a9-e5f3-4f66-bcb7-545d87e4384e.jpg",
+    "https://cdn.phototourl.com/member/2026-10-07-5af4deb8-d3e5-4446-98e3-d8262a0c0682.jpg",
+    "https://cdn.phototourl.com/member/2026-10-07-00547ae9-a862-4f1a-b242-2fe29164b421.jpg",
+    "https://cdn.phototourl.com/member/2026-10-07-598eadb7-5152-4541-8ad6-7feaf81d8a9d.jpg",
+    "https://cdn.phototourl.com/member/2026-10-07-f24d3a5e-7a43-47ee-9321-d800996a35fe.jpg",
+    "https://cdn.phototourl.com/member/2026-10-07-2ee1d00a-1828-4bdf-962d-e59e59dcb329.jpg",
+    "https://cdn.phototourl.com/member/2026-10-07-aae1f2a8-2445-4065-9991-aa3ab8343b4b.jpg"
+];
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// --- HẠT CÁT NỀN VŨ TRỤ ---
+let bgParticles = [];
+function makeBgParticles(w, h) {
+    const count = Math.max(60, Math.floor(100 * (w * h) / (BASE_W * BASE_H)));
+    let p = [];
+    for (let i = 0; i < count; i++) {
+        p.push({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            speed: Math.random() < 0.67 ? 1 : 2,
+            size: Math.floor(Math.random() * 2) + 1
+        });
+    }
+    return p;
+}
+
+// --- TRÁI TIM ---
+const HEART_W = 500, HEART_H = 480;
+const HEART_CX = 250, HEART_CY = 225;
+const HEART_K = 12.5;
+const NUM_FRAMES = 36;
+const HEART_CYCLE_SEC = 1.6;
+
+function heartXY(t) {
+    const x = 16 * Math.pow(Math.sin(t), 3);
+    const y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+    return { x: x * HEART_K, y: y * HEART_K };
+}
+
+const OUTLINE = [];
+for (let i = 0; i < 360; i++) {
+    OUTLINE.push(heartXY((i / 360) * 2 * Math.PI));
+}
+
+// Giả lập mask trái tim để rải hạt
+const maskCanvas = document.createElement('canvas');
+maskCanvas.width = HEART_W;
+maskCanvas.height = HEART_H;
+const maskCtx = maskCanvas.getContext('2d');
+maskCtx.fillStyle = 'black';
+maskCtx.fillRect(0, 0, HEART_W, HEART_H);
+maskCtx.fillStyle = 'white';
+maskCtx.beginPath();
+OUTLINE.forEach((pt, idx) => {
+    if (idx === 0) maskCtx.moveTo(HEART_CX + pt.x, HEART_CY + pt.y);
+    else maskCtx.lineTo(HEART_CX + pt.x, HEART_CY + pt.y);
+});
+maskCtx.closePath();
+maskCtx.fill();
+const maskData = maskCtx.getImageData(0, 0, HEART_W, HEART_H).data;
+
+function isInsideMask(ix, iy) {
+    if (ix < 0 || ix >= HEART_W || iy < 0 || iy >= HEART_H) return false;
+    const idx = (iy * HEART_W + ix) * 4;
+    return maskData[idx] > 128;
+}
+
+const heartParticles = [];
+while (heartParticles.length < 4200) {
+    const rx = (Math.random() * 410) - 205;
+    const ry = (Math.random() * 365) - 150;
+    const ix = Math.floor(HEART_CX + rx);
+    const iy = Math.floor(HEART_CY + ry);
+    if (!isInsideMask(ix, iy)) continue;
+
+    const d = Math.pow(Math.min(1.0, Math.hypot(rx / 200, (ry - 10) / 200)), 1.6);
+    let r = lerp(255, 232, d);
+    let g = lerp(165, 45, d);
+    let b = lerp(205, 120, d);
+
+    const hl = Math.max(0.0, 1 - Math.hypot(rx + 90, ry + 70) / 95);
+    r += 40 * hl; g += 70 * hl; b += 50 * hl;
+    g += (Math.random() * 24) - 12;
+    b += (Math.random() * 24) - 12;
+
+    const sizes = [1, 2, 2, 3];
+    heartParticles.push({
+        rx, ry,
+        r: clamp(r, 0, 255),
+        g: clamp(g, 0, 255),
+        b: clamp(b, 0, 255),
+        size: sizes[Math.floor(Math.random() * sizes.length)],
+        offset: Math.random() * 2 * Math.PI
+    });
+}
+
+for (let i = 0; i < 1000; i++) {
+    const t = Math.random() * 2 * Math.PI;
+    const pt = heartXY(t);
+    const u = Math.random() * 0.035;
+    const sizes = [1, 2, 2];
+    heartParticles.push({
+        rx: pt.x * (1 - u),
+        ry: pt.y * (1 - u),
+        r: 255,
+        g: clamp(185 + Math.random() * 30, 0, 255),
+        b: clamp(215 + Math.random() * 23, 0, 255),
+        size: sizes[Math.floor(Math.random() * sizes.length)],
+        offset: Math.random() * 2 * Math.PI
+    });
+}
+
+const HEART_FRAMES = [];
+for (let frameIdx = 0; frameIdx < NUM_FRAMES; frameIdx++) {
+    const p = frameIdx / NUM_FRAMES;
+    const timeVal = p * Math.PI * 2;
+    const fCanvas = document.createElement('canvas');
+    fCanvas.width = HEART_W;
+    fCanvas.height = HEART_H;
+    const fCtx = fCanvas.getContext('2d');
+
+    // Quầng sáng
+    fCtx.save();
+    fCtx.fillStyle = 'rgba(255, 60, 140, 0.3)';
+    fCtx.beginPath();
+    OUTLINE.forEach((pt, idx) => {
+        const x = HEART_CX + pt.x * 1.08;
+        const y = HEART_CY + pt.y * 1.08;
+        if (idx === 0) fCtx.moveTo(x, y);
+        else fCtx.lineTo(x, y);
+    });
+    fCtx.closePath();
+    fCtx.filter = 'blur(12px)';
+    fCtx.fill();
+    fCtx.restore();
+
+    // Các hạt
+    heartParticles.forEach(pt => {
+        const flick = (Math.sin(timeVal + pt.offset) + 1) / 2;
+        const k = 0.78 + 0.22 * flick;
+        const cr = Math.min(255, Math.floor(pt.r * k));
+        const cg = Math.min(255, Math.floor(pt.g * k));
+        const cb = Math.min(255, Math.floor(pt.b * k));
+        fCtx.fillStyle = `rgb(${cr},${cg},${cb})`;
+        fCtx.beginPath();
+        fCtx.arc(HEART_CX + pt.rx, HEART_CY + pt.ry, pt.size, 0, Math.PI * 2);
+        fCtx.fill();
+    });
+
+    HEART_FRAMES.push(fCanvas);
+}
+
+// --- CHỮ BAY LƯỢN ---
+const numTexts = Math.floor(Math.random() * 6) + 10;
+const floatingTexts = [];
+const SIZES = [24, 30, 36, 44];
+
+for (let i = 0; i < numTexts; i++) {
+    const size = SIZES[Math.floor(Math.random() * SIZES.length)];
+    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    const mags = {24: [1], 30: [1, 2], 36: [2], 44: [2, 3]}[size];
+    const dx = (Math.random() < 0.5 ? -1 : 1) * mags[Math.floor(Math.random() * mags.length)];
+    const dy = (Math.random() < 0.5 ? -1 : 1) * mags[Math.floor(Math.random() * mags.length)];
+
+    floatingTexts.push({
+        x: Math.random() * (BASE_W - 200) + 50,
+        y: Math.random() * (BASE_H - 100) + 50,
+        fx: 0, fy: 0,
+        dx, dy,
+        size,
+        color,
+        ph: Math.random() * 6.283
+    });
+}
+floatingTexts.sort((a, b) => a.size - b.size);
+
+// --- CHẾ ĐỘ ẢNH ---
+const IMAGE_COUNT = IMAGE_URLS.length;
+const IMG_WORLD_H = 5.5;
+const CAM_DIST = 22.0;
+const HEART_WORLD_W = 10.0;
+const ORBIT_SPEED = 0.10;
+
+let slotTheta = Array.from({length: IMAGE_COUNT}, (_, k) => 2 * Math.PI * k / IMAGE_COUNT);
+slotTheta.sort(() => Math.random() - 0.5);
+
+const loadedImgs = new Array(IMAGE_COUNT).fill(null);
+const slotRects = new Array(IMAGE_COUNT).fill(null);
+let loadedCount = 0;
+let failedCount = 0;
+
+IMAGE_URLS.forEach((url, i) => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.onload = () => {
+        // Bo góc cho ảnh
+        const rCanvas = document.createElement('canvas');
+        rCanvas.width = img.width;
+        rCanvas.height = img.height;
+        const rCtx = rCanvas.getContext('2d');
+        const radius = Math.max(4, Math.floor(Math.min(img.width, img.height) * 0.06));
+
+        rCtx.beginPath();
+        rCtx.moveTo(radius, 0);
+        rCtx.lineTo(img.width - radius, 0);
+        rCtx.quadraticCurveTo(img.width, 0, img.width, radius);
+        rCtx.lineTo(img.width, img.height - radius);
+        rCtx.quadraticCurveTo(img.width, img.height, img.width - radius, img.height);
+        rCtx.lineTo(radius, img.height);
+        rCtx.quadraticCurveTo(0, img.height, 0, img.height - radius);
+        rCtx.lineTo(0, radius);
+        rCtx.quadraticCurveTo(0, 0, radius, 0);
+        rCtx.closePath();
+        rCtx.clip();
+        rCtx.drawImage(img, 0, 0);
+
+        loadedImgs[i] = rCanvas;
+        slotRects[i] = {
+            pos: [0, 0, 0],
+            theta: slotTheta[i % slotTheta.length] + (Math.random() * 0.2 - 0.1),
+            radius: Math.random() * 3 + 8.0,
+            y0: Math.random() * 6 - 3.0,
+            w: IMG_WORLD_H * (img.width / img.height),
+            h: IMG_WORLD_H,
+            aspect: img.width / img.height,
+            fq: [Math.random() * 0.3 + 0.35, Math.random() * 0.3 + 0.35, Math.random() * 0.3 + 0.35],
+            ph: [Math.random() * 6.283, Math.random() * 6.283, Math.random() * 6.283]
+        };
+        loadedCount++;
+    };
+    img.onerror = () => { failedCount++; };
+    img.src = url;
+});
+
+// Trạng thái Camera & Chế độ
+let imageMode = false;
+let yaw = 0.0, pitch = 0.15, zoom = 1.0;
+let tyaw = 0.0, tpitch = 0.15, tzoom = 1.0;
+let vyaw = 0.0, vpitch = 0.0;
+let floatT = 0.0;
+let orbitAng = 0.0;
+
+let focusIdx = null;
+let focusDraw = null;
+let focusT = 0.0;
+let focusProj = null;
+let hitRects = [];
+
+function fitView() {
+    yaw = 0.0; pitch = 0.15; zoom = 1.0;
+    tyaw = 0.0; tpitch = 0.15; tzoom = 1.0;
+    vyaw = 0.0; vpitch = 0.0;
+}
+
+function setImageMode(on) {
+    imageMode = on;
+    focusIdx = null; focusDraw = null;
+    focusT = 0.0;
+    floatingTexts.forEach(t => {
+        if (on) { t.fx = t.x; t.fy = t.y; }
+        else { t.x = t.fx || t.x; t.y = t.fy || t.y; }
+    });
+    if (on) fitView();
+}
+
+// Xử lý sự kiện tương tác
+let dragging = false;
+let dragDist = 0;
+let lastMouseX = 0, lastMouseY = 0;
+let lastMotionT = 0;
+let clickLog = [];
+let pendingClickTimer = null;
+
+window.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    const tn = performance.now() / 1000;
+    const mx = e.clientX, my = e.clientY;
+
+    if (pendingClickTimer) { clearTimeout(pendingClickTimer); pendingClickTimer = null; }
+    dragDist = 0;
+    vyaw = 0; vpitch = 0;
+
+    clickLog = clickLog.filter(c => tn - c.t < 0.6 && Math.hypot(c.x - mx, c.y - my) < 30);
+    clickLog.push({ t: tn, x: mx, y: my });
+
+    if (clickLog.length >= 3) {
+        clickLog = [];
+        dragging = false;
+        setImageMode(!imageMode);
+    } else {
+        dragging = true;
+        lastMouseX = mx;
+        lastMouseY = my;
+    }
+});
+
+window.addEventListener('mousemove', (e) => {
+    if (!dragging || !imageMode) return;
+    const dx = e.clientX - lastMouseX;
+    const dy = e.clientY - lastMouseY;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    dragDist += Math.abs(dx) + Math.abs(dy);
+
+    if (focusIdx === null && dragDist >= 6) {
+        const tn = performance.now() / 1000;
+        const el = Math.max(tn - lastMotionT, 1 / 240);
+        tyaw += dx * 0.005;
+        tpitch = clamp(tpitch - dy * 0.005, -1.2, 1.2);
+        vyaw = vyaw * 0.6 + (dx * 0.005 / el) * 0.4;
+        vpitch = vpitch * 0.6 + (-dy * 0.005 / el) * 0.4;
+        lastMotionT = tn;
+    }
+});
+
+window.addEventListener('mouseup', (e) => {
+    if (e.button !== 0) return;
+    if (dragging && imageMode) {
+        if (dragDist < 6) {
+            if (clickLog.length === 1) {
+                const mx = e.clientX, my = e.clientY;
+                pendingClickTimer = setTimeout(() => {
+                    pendingClickTimer = null;
+                    if (focusIdx !== null) {
+                        focusIdx = null;
+                    } else {
+                        let hit = null;
+                        for (let i = hitRects.length - 1; i >= 0; i--) {
+                            const hr = hitRects[i];
+                            if (mx >= hr.x && mx <= hr.x + hr.w && my >= hr.y && my <= hr.y + hr.h) {
+                                hit = hr.i;
+                                break;
+                            }
+                        }
+                        if (hit !== null) { focusIdx = hit; focusDraw = hit; }
+                    }
+                }, 350);
+            }
+        } else if (focusIdx === null && (performance.now() / 1000) - lastMotionT < 0.06) {
+            tyaw += clamp(vyaw, -3, 3) * 0.25;
+            tpitch = clamp(tpitch + clamp(vpitch, -3, 3) * 0.25, -1.2, 1.2);
+        }
+    }
+    dragging = false;
+});
+
+window.addEventListener('wheel', (e) => {
+    if (imageMode && focusIdx === null) {
+        const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+        tzoom = clamp(tzoom * factor, 0.4, 3.0);
+    }
+});
+
+// Khởi tạo Canvas Resizing
+let scale = 1.0;
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    scale = Math.max(0.4, Math.round(Math.min(canvas.width / BASE_W, canvas.height / BASE_H) * 20) / 20);
+    bgParticles = makeBgParticles(canvas.width, canvas.height);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// --- VÒNG LẶP RENDER ---
+let lastTime = performance.now();
+let heartTime = 0.0;
+
+function updateAndRender() {
+    const now = performance.now();
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+    heartTime += dt;
+
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 1. Hạt cát nền
+    ctx.fillStyle = 'white';
+    bgParticles.forEach(p => {
+        p.y += p.speed;
+        if (p.y > canvas.height) {
+            p.y = 0;
+            p.x = Math.random() * canvas.width;
+        }
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    const animIdx = Math.floor((heartTime % HEART_CYCLE_SEC) / HEART_CYCLE_SEC * NUM_FRAMES) % NUM_FRAMES;
+
+    if (imageMode) {
+        // Cập nhật vị trí 3D
+        floatT += dt;
+        const k = 1 - Math.exp(-dt * 9);
+        yaw += (tyaw - yaw) * k;
+        pitch += (tpitch - pitch) * k;
+        zoom += (tzoom - zoom) * k;
+
+        if (focusIdx !== null) {
+            focusT = Math.min(1.0, focusT + dt * 3.0);
+        } else {
+            focusT = Math.max(0.0, focusT - dt * 3.0);
+            if (focusT === 0.0) focusDraw = null;
+        }
+        orbitAng += ORBIT_SPEED * dt * (1 - focusT);
+
+        slotRects.forEach((o) => {
+            if (!o) return;
+            const th = o.theta + orbitAng;
+            const rad = o.radius + Math.sin(floatT * o.fq[0] + o.ph[0]) * 0.25;
+            o.pos[0] = rad * Math.sin(th);
+            o.pos[2] = rad * Math.cos(th);
+            o.pos[1] = o.y0 + Math.sin(floatT * o.fq[1] + o.ph[1]) * 0.35;
+        });
+
+        // Vẽ Trái tim 3D & Ảnh 3D
+        const f = Math.min(canvas.width, canvas.height) * zoom;
+        const cyw = Math.cos(yaw), syw = Math.sin(yaw);
+        const cp = Math.cos(pitch), sp = Math.sin(pitch);
+
+        let items = [{ z2: CAM_DIST, x1: 0, y1: 0, i: -1 }];
+        slotRects.forEach((o, i) => {
+            if (!o) return;
+            const [x, y, z] = o.pos;
+            const x1 = x * cyw - z * syw;
+            const z1 = x * syw + z * cyw;
+            const y1 = y * cp - z1 * sp;
+            const z2 = y * sp + z1 * cp + CAM_DIST;
+            if (z2 >= 1.5) items.push({ z2, x1, y1, i });
+        });
+        items.sort((a, b) => b.z2 - a.z2);
+
+        hitRects = [];
+        focusProj = null;
+
+        items.forEach(item => {
+            if (item.i === -1) {
+                // Vẽ trái tim ở trung tâm 3D
+                const sw = Math.floor(HEART_WORLD_W * f / CAM_DIST);
+                const sh = Math.floor(sw * HEART_H / HEART_W);
+                if (sw >= 4 && sw <= 4000) {
+                    ctx.drawImage(HEART_FRAMES[animIdx], canvas.width / 2 - sw / 2, canvas.height / 2 - sh / 2, sw, sh);
+                }
+            } else {
+                const i = item.i;
+                const o = slotRects[i];
+                const kScale = f / item.z2;
+                const sw = Math.floor(o.w * kScale);
+                const sh = Math.floor(o.h * kScale);
+                const sx = canvas.width / 2 + item.x1 * kScale;
+                const sy = canvas.height / 2 - item.y1 * kScale;
+
+                if (i === focusDraw) {
+                    focusProj = { sx, sy, sw, sh };
+                    return;
+                }
+                if (sw < 4 || sh < 4 || sw > 4000 || sh > 4000) return;
+                if (sx + sw / 2 < 0 || sx - sw / 2 > canvas.width || sy + sh / 2 < 0 || sy - sh / 2 > canvas.height) return;
+
+                const fade = clamp(1.3 - (item.z2 - 14) / 30, 0.4, 1.0);
+                const x0 = sx - sw / 2;
+                const y0 = sy - sh / 2;
+
+                ctx.save();
+                ctx.globalAlpha = fade;
+                ctx.shadowColor = 'rgba(255, 90, 160, 0.8)';
+                ctx.shadowBlur = 15;
+                ctx.drawImage(loadedImgs[i], x0, y0, sw, sh);
+                ctx.restore();
+
+                hitRects.push({ i, x: x0, y: y0, w: sw, h: sh });
+            }
+        });
+
+        // Vẽ chữ Chế độ 2
+        const shown = floatingTexts.filter((_, idx) => idx % 3 === 0);
+        shown.forEach(t => {
+            t.fx += t.dx * 12 * scale * dt;
+            t.fy += t.dy * 12 * scale * dt;
+
+            if (t.fx <= 0) { t.fx = 0; t.dx = Math.abs(t.dx); }
+            else if (t.fx + 150 >= canvas.width) { t.fx = canvas.width - 150; t.dx = -Math.abs(t.dx); }
+            if (t.fy <= 0) { t.fy = 0; t.dy = Math.abs(t.dy); }
+            else if (t.fy + 40 >= canvas.height) { t.fy = canvas.height - 40; t.dy = -Math.abs(t.dy); }
+
+            const bob = Math.sin(floatT * 1.1 + t.ph) * 6;
+            ctx.save();
+            ctx.font = `bold ${Math.floor(t.size * scale)}px sans-serif`;
+            ctx.fillStyle = t.color;
+            ctx.shadowColor = t.color;
+            ctx.shadowBlur = 10;
+            ctx.fillText(TEXT_V2, t.fx, t.fy + bob);
+            ctx.restore();
+        });
+
+        // Focus xem ảnh Phóng to
+        if (focusDraw !== null && focusT > 0) {
+            const e = focusT * focusT * (3 - 2 * focusT);
+            ctx.fillStyle = `rgba(0, 0, 0, ${0.78 * e})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const o = slotRects[focusDraw];
+            const th = Math.min(canvas.height * 0.86, (canvas.width * 0.86) / o.aspect);
+            const tw = th * o.aspect;
+
+            const sx0 = focusProj ? focusProj.sx : canvas.width / 2;
+            const sy0 = focusProj ? focusProj.sy : canvas.height / 2;
+            const sw0 = focusProj ? focusProj.sw : tw * 0.3;
+            const sh0 = focusProj ? focusProj.sh : th * 0.3;
+
+            const cx = sx0 + (canvas.width / 2 - sx0) * e;
+            const cy = sy0 + (canvas.height / 2 - sy0) * e;
+            const w = Math.max(4, sw0 + (tw - sw0) * e);
+            const h = Math.max(4, sh0 + (th - sh0) * e);
+
+            ctx.save();
+            ctx.shadowColor = 'rgba(255, 90, 160, 0.9)';
+            ctx.shadowBlur = 25;
+            ctx.drawImage(loadedImgs[focusDraw], cx - w / 2, cy - h / 2, w, h);
+            ctx.restore();
+        }
+
+        // HUD thông báo tải ảnh
+        if (loadedCount + failedCount < IMAGE_COUNT) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.67)';
+            ctx.font = '18px sans-serif';
+            ctx.fillText(`Đang tải ảnh ${loadedCount}/${IMAGE_COUNT}...`, 10, canvas.height - 15);
+        }
+    } else {
+        // 2. Chế độ thường: Trái tim ở trung tâm
+        const heartImg = HEART_FRAMES[animIdx];
+        const w = HEART_W * scale;
+        const h = HEART_H * scale;
+        ctx.drawImage(heartImg, canvas.width / 2 - w / 2, canvas.height / 2 - h / 2 + 10 * scale, w, h);
+
+        // 3. Chữ bay chế độ 1
+        floatingTexts.forEach(t => {
+            const sx = Math.max(1, Math.round(Math.abs(t.dx) * scale));
+            const sy = Math.max(1, Math.round(Math.abs(t.dy) * scale));
+            t.x += t.dx > 0 ? sx : -sx;
+            t.y += t.dy > 0 ? sy : -sy;
+
+            if (t.x <= 0) { t.x = 0; t.dx = Math.abs(t.dx); }
+            else if (t.x + 180 >= canvas.width) { t.x = canvas.width - 180; t.dx = -Math.abs(t.dx); }
+            if (t.y <= 0) { t.y = 0; t.dy = Math.abs(t.dy); }
+            else if (t.y + 40 >= canvas.height) { t.y = canvas.height - 40; t.dy = -Math.abs(t.dy); }
+
+            ctx.save();
+            ctx.font = `bold ${Math.floor(t.size * scale)}px sans-serif`;
+            ctx.fillStyle = t.color;
+            ctx.shadowColor = t.color;
+            ctx.shadowBlur = 10;
+            ctx.fillText(TEXT_STR, t.x, t.y);
+            ctx.restore();
+        });
+    }
+
+    requestAnimationFrame(updateAndRender);
+}
+
+requestAnimationFrame(updateAndRender);
+</script>
+</body>
+</html>
